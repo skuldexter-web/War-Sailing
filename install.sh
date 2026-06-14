@@ -3,7 +3,7 @@ set -Eeuo pipefail
 IFS=$'\n\t'
 
 readonly APP_NAME="WAR SAILING"
-readonly APP_VERSION="1.2.2"
+readonly APP_VERSION="1.2.3"
 readonly DATA_DIR="${HOME}/.warsailing"
 readonly LOG_DIR="${DATA_DIR}/logs"
 readonly BIN_DIR="${DATA_DIR}/bin"
@@ -53,7 +53,6 @@ print_banner() {
     local cols
     cols=$(tput cols 2>/dev/null || echo 80)
     
-    # Als het scherm groot genoeg is (minimaal 80 tekens), tonen we de grote banner
     if (( cols >= 80 )); then
         printf '%s' "${C_GOLD}${C_BOLD}"
         cat <<'BANNER'
@@ -67,7 +66,6 @@ BANNER
         printf '%s\n' "${C_RESET}"
         printf "%s          \"LETS EXPLORE THE 7 SEA'S AND CONQUER FOR WALHALLA\"%s\n\n" "${C_STEEL}${C_BOLD}" "${C_RESET}"
     else
-        # Is het scherm te klein (zoals de 3.5" Pi)? Dan gebruiken we de compacte, veilige layout
         (( cols < 40 )) && cols=40
         printf '%s' "${C_OCEAN}"
         printf '%*s\n' "$cols" '' | tr ' ' '='
@@ -330,7 +328,8 @@ stop_gpsd_if_we_started_it() {
 
 get_gps_fix() {
     local json
-    json=$(timeout 2 gpspipe -w -n 15 2>/dev/null | grep -m1 '"class":"TPV"' || true)
+    # Filter null-bytes instantly from the serial/gpspipe buffer stream
+    json=$(timeout 2 gpspipe -w -n 15 2>/dev/null | tr -d '\0' | grep -m1 '"class":"TPV"' || true)
     if [[ -z "$json" ]]; then
         printf '%s' "0.000000,0.000000,0.0,0.0"
         return
@@ -431,8 +430,9 @@ run_loot_feed() {
         rssi=$(echo "$line" | jq -r '.rssi // -100')
         auth=$(echo "$line" | jq -r '.auth // "[UNKNOWN]"')
 
-        local lat lon alt acc
-        IFS=',' read -r lat lon alt acc <<< "$(get_gps_fix)"
+        local lat lon alt acc gps_fix
+        gps_fix=$(get_gps_fix)
+        IFS=',' read -r lat lon alt acc <<< "$gps_fix"
         printf '%s,"%s",%s,%s,%s,%s,%s,%s,%s,%s,WIFI\n' "$bssid" "$ssid" "$auth" "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" "$channel" "$rssi" "$lat" "$lon" "$alt" "$acc" >> "$CURRENT_LOG_FILE"
 
         local rssi_color="$C_STEEL"
